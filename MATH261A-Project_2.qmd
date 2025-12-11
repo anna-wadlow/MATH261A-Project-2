@@ -1,0 +1,361 @@
+---
+title: "The Rise of Active Defensemen"
+subtitle: "Assessing Whether Defense Scoring Percentage Influences NHL Regular-Season Outcomes"
+author: Anna Wadlow
+thanks: "Project repository available at: [https://github.com/anna-wadlow/MATH261A-Project-2](https://github.com/anna-wadlow/MATH261A-Project-2)."
+date: today
+date-format: long
+abstract: "This paper evaluates whether NHL teams gain a competitive edge when their defensemen take on a more offensive role. Analyzing seven seasons of team-level data, multiple regression models are fit accounting for possession strength, goaltending performance, and season effects, to test whether defense scoring percentage is meaningfully related to team standings points. Although active defensemen have become increasingly popular in recent years, our results show that there is no statistically significant relationship between scoring percentage and team success. These findings suggest, rather, that overall team quality, not the distribution of scoring across skaters, remains the primary driver of team standings."
+format: pdf
+editor: visual
+bibliography: references.bib
+number-sections: true
+echo: FALSE
+---
+
+```{r}
+#| include: false
+#| warning: false
+#| message: false
+library(nhlscraper)
+library(dplyr)
+library(tidyverse)
+library(tidyr)
+library(purrr)
+library(car)
+library(ggplot2)
+library(scales)
+library(ggpubr)
+library(knitr)
+library(gt)
+library(broom)
+library(patchwork)
+full_df <- readr::read_csv("NHL_18to25_stats.csv")
+full_df_scaled <- readr::read_csv("NHL_18to25_stats_scaled.csv")
+
+```
+
+## Introduction {#sec-intro}
+
+The past decade of NHL (National Hockey League) hockey has seen a notable shift towards analytics-driven strategy, as teams increasingly rely on data to inform in-game management, strategy decisions, and roster creation. One of the most obvious areas has been the rise of active defensemen. These are skaters who not only defend their own end but will frequently join the rush and contribute meaningfully to offensive play. As prior research on zone entries and puck possession has shown, controlled zone entries, where the player maintains puck possessions, resulted in more than twice the amount of average shots than uncontrolled entries. [@controlled_entry] Findings such as these motivate defensemen to play more "actively" shifting them to become mobile defenders who join the rush in an offensive sense, essentially becoming a fourth forward at times. [@def_coverage]
+
+This strategic evolution raises the question whether teams actually benefit in the regular season standings when their defensemen contribute more to the team's overall scoring. Despite widespread interest in offensive defensemen, there is little formal work assessing whether defense share of team scoring has an independent effect on team success. The share could indicate a well-balanced offensive structure, or could be due to weaker scoring forwards. Existing analytics tends to focus on possession metrics, expected goals, special team efficiency, and goaltending as the primary drivers of team standings. 
+
+To investigate this question we analyze seven NHL regular seasons, 2018-2019 through 2024-2025, using multiple regression models that relate the defense scoring percentage to the team standings points. Essential control variables are incorporated to account for major factors that are known to influence team success. We address nonlinearity present in one of our control variables by extending the model to include a polynomial term. We also test a further model with additional special-teams control. Through these models we formally test whether defense scoring percentage has a statistically significant effect on team standings. Our findings show that, once we account for team strength, defense scoring percentage does not meaningfully influence a team's outcome.  
+
+The paper is structured as follows. @sec-data describes the dataset and key variables used in the analysis. @sec-methods outlines the modeling approach, including assumptions and model selection. @sec-results presents the primary statistical results and discusses diagnostics. @sec-discussion interprets these findings, discusses limitations, and identifies directions for future research.
+
+## Data {#sec-data}
+
+Data for this paper is gathered from the NHL official website [@NHL_Stats_2025]. While the breadth of available data spans roughly 100 years, we focus our research on the seven seasons from 2018-2019 through 2024-2025. The key variables used in this paper are team standings points, defense scoring percentage, unblocked shot attempts (USAT) percentage, save percentage, power play percentage, penalty kill percentage, season ID, and team abbreviation.
+
+An NHL ice hockey season is comprised of the regular season followed by the Stanley Cup playoffs, an elimination tournament. In this paper, we focus on the regular season, from October to April, which typically spans 82 games played by 32 teams. Each team tries to earn sufficient points to qualify for the playoffs. For each game won (in regulation, overtime, or shootout) a team earns 2 points. For a game lost in overtime or shootout, a team earns 1 point. This can be viewed as a reward for lasting through the 60 minutes of regulation playtime. For a loss is regulation, no points are awarded.
+
+The team standings at the end of the regular season are primarily determined by the team standings points earned and is considered in this paper as the response variable. It serves as a meaningful variable for evaluating the impact of team-level attributes.
+
+Throughout the season, the skaters, both defensemen and forwards, earn individual points which are a measure of their offensive contribution. Points are awarded for a player's involvement in goals scored. 1 point is awarded to the player who shoots the puck into the net. 1 point is awarded to the player(s) who passed the puck to the goal scorer. At most, 2 players can receive an assist point. An important distinction is that the skaters' points are not counted in the team's points. A player could score 3 points in a given game, which the team may consequently win. The team would earn 2 points for the win.
+
+For clarity in this paper, we refer to the team points earned that determine their standings as "team standings points". For the points earned by an individual skater, which are not used to determine a team's standings, as "skater scoring".
+
+The predictive variable of main interest in this paper is the defense scoring percentage. This percentage is calculated as the total skater scoring for team's defensemen over the total team's skater scoring.
+
+$$
+Defense\ Scoring\ Percentage = \frac{Team\ Defensemen\ Skater\ Scoring}{Total\ Team\ Skater\ Scoring}
+$$
+
+This calculated percentage aims to capture the offensive structure and playstyle of a team. Averaged over the 7 seasons analyzed by this paper, @fig-defense-score-pct shows that team offensive structure is fairly consistent ranging from `r round(summary(full_df$overall_pct_def)["Min."],2)` to `r round(summary(full_df$overall_pct_def)["Max."],2)`
+
+```{r fig-defense-score-pct}
+#| fig-width: 8
+#| fig-height: 5
+#| fig-cap: "Average percentage of total skater scoring contributed by defensemen for each NHL team across the 18-19 through 24-25 regular seasons. Team-level averages show that most percentages cluster within a narrow range, roughly between 22-28%, suggesting that the defense scoring percentage remains relatively consistent across the league despite differences in play style and strategy."
+#| echo: false
+#| message: false
+
+
+ggplot(full_df[full_df$season_id == 20242025,], aes(x = reorder(team_abbrev, overall_pct_def), y = overall_pct_def))+
+  theme_light()+
+  coord_flip()+
+  geom_col(width = .6, fill = "#006D75", alpha = .7)+
+  scale_y_continuous("Defense Scoring Contribution (%)", breaks = pretty_breaks()) +
+  labs(
+    title = "Percentage of Team Points Generated by Defensemen",
+    subtitle = "Averaged For Season 18-19 through 24-25",
+    x = "Team")+
+  theme(axis.title.y = element_text(size = 6))
+
+```
+
+A preliminary scatter plot, @fig-scatter, looks at the relationship between defense scoring percentage and team standings points, showing no obvious relationship between the two variables.
+
+```{r fig-scatter}
+#| fig-height: 3
+#| fig-cap: "Scatterplot of defense scoring percentage vs. team standings points for all teams from the 18-19 through 24-25 NHL regular seasons. The fitted regression line shows an almost flat relationship, indicating little evidence of a linear association between defense scoring percentage and overall team performance before adjustments for team-strength."
+#| echo: false
+#| message: false
+
+ggplot(full_df, aes(x = pct_points_def, y = points))+
+  geom_point()+
+  geom_smooth(method = "lm", se = FALSE)+
+  scale_x_continuous("Defense Scoring Percentage", breaks = pretty_breaks()) +
+  scale_y_continuous("Team Standings Points", breaks = pretty_breaks()) +
+  stat_regline_equation(label.x = 0.175, label.y = 90)+
+  labs(
+    title = "Defense Scoring Percentage vs. Team Standings Points",
+      subtitle = "Seasons 18-19 through 24-25")+
+    theme(plot.title = element_text(size=15))+
+    theme_light()
+```
+
+### Control Variables {#sec-control-variables}
+
+A select number of variables are included to control for team quality and allow the analysis to compare team gameplay structure across a level playing field. These controls are reasonable related to and affect both the outcome variable, team standings points, and the predictor variable, defense scoring percentage.
+
+To control for overall team offensive strength and stabilize our regression estimates, we include "Unblocked Shot Attempts Percentage" (USAT %). USAT %, sometimes referred to as "Fenwick For %" or possession share, is calculated as,
+
+$$
+USAT\% = \frac{USAT\ For}{USAT\ For\ +\ USAT\ Against}
+$$
+
+where "USAT For" is the unblocked shot attempts taken by the team and "USAT Against" is the unblocked shot attempts against the team. Both shots on goal and missed shots on goal are included. A team driving shot attempts has a high USAT % indicating that they are in the offensive zone more and spending less time defending. Their defensemen participate more in play and their goalies face fewer risky chances.
+
+Three additional control variables are included: Save percentage, Power Play percentage, and Penalty Kill percentage. Adjusting for these additional variables attempt to isolate team-strength effects and allow for testing of the defense scoring percentage.
+
+Save percentage is the percentage of shots on goals that a team's goalie prevents from going into the net. For this measure, only shots on goal are considered. This metric reflects goaltending quality and the defenses ability to prevent their opponent from taking dangerous shots, both which influence team success. While a high save percentage could be attributable to good team defense or a good goaltender with bad team defense, it is still included as a control variable as it controls for differences in goaltending skills and defense performance.
+
+$$
+SV\% = \frac{Saves}{Shots\ Against}*100
+$$
+
+Power Play percentage, PP%, is a measure of a team's power play goals for divided by its number of chances to score on the power play (known as power play opportunities). PP% measures a team's offensive talent and efficiency, which directly contributes to the total goals and wins.
+
+$$
+PP\% = \frac{Power\ Play\ Goals}{Power\ Play\ Opportunities} *100
+$$
+
+The Penalty Kill percentage, PK%, is calculated as one minus the team's power play goals against (PP GA) divided by the number of chances the opponent has to score on the power play, also called times shorthanded (TS). This measure reflects the team's defensive structure and goaltending performance under pressure.
+
+$$
+PK\% = 1- \frac{Power\ Play\ Goals\ Against}{Times\ Shorthanded}*100
+$$
+
+We also include the season to control for league-wide changes that can vary from year to year while affecting all teams concurrently to ensure that our primary predictor, defense scoring percent, is not confounded by changes in the NHL environment that occur across seasons. These changes include rule changes, scheduling differences, and wide-spread trends in playing styles.
+
+### Data Limitations and Additional Sources of Data {#sec-data-limits}
+
+One significant limitation of our data is that the seasons 2019-2020 and 2020-2021, as seen in @tbl-game-counts. The 2019-2020 season was cut short due to the COVID-19 pandemic and most teams played only 68-71 games. The 2020-2021 season was also impacted by the COVID-19 pandemic shortening the schedule to 56 games per team. This reduces the sample size for these seasons, changes the scoring environment, and causes certain control variables, such as unblocked shot attempts % (USAT %) and team standings points to be less comparable between seasons.
+
+We also note that the NHL league expansion in the 2021-2022 season added the Seattle Kraken team, which likely impacted team strategies.
+
+Additionally, many of our predictor variables are percentages bounded between 0 and 1, which can potentially limit their variability and result in nonlinear relationships with team points.
+
+Additional sources of data we could introduce include deeper goal metrics, player-level statistics, and advanced goaltending measures to capture additional underling team processes. We could also add control variables that account for player injuries, coaching changes, add quality of competition. Thoughtful addition of these data points can strengthen inference regarding the independent effect of defense scoring percent.
+
+```{r}
+#| echo: FALSE
+#| label: tbl-game-counts
+#| tbl-cap: Number of Teams and Games per Team by Season
+
+countGamesBySeason <- full_df %>%
+group_by(season_id) %>%
+  summarise(
+    games_per_team = median(games_played),
+    n_team = n(),
+    .groups = "drop")
+
+countGamesBySeason %>%
+  gt() %>%
+  cols_label(
+    season_id          = "Season",
+    games_per_team     = "Games per Team",
+    n_team            = "Number of Teams"
+  ) %>%
+  # add the asterisk + footnote to the 2019-20 league games cell
+  tab_footnote(
+    footnote = "Seasons shortened due to COVID-19.",
+    locations = cells_body(
+      columns = games_per_team,
+      rows    = season_id == "20192020" | season_id == "20202021"
+    )
+  ) %>%
+  tab_footnote(
+    footnote = "Reflects median games played per team.",
+    locations = cells_body(
+      columns = games_per_team,
+      rows = season_id == "20192020"
+    )
+  )
+```
+
+## Methods {#sec-methods}
+
+Our analysis tests if the defense scoring percentage impacts overall team standings at the end of the regular season. To test this, our null hypothesis is that the $\beta_1$ coefficient for defense scoring percentage is 0, that is, it has no effect on the response variable, team standings points.
+
+Our alternative hypothesis is that the $\beta_1$ coefficient does not equal zero and thus does have an impact, either positively or negatively, on the response variable, team standings points.
+
+$$ 
+H_0:\beta_1 = 0\ vs.\ H_a:\beta_1 \not= 0 
+$$
+
+We will use a significance level of 5% to evaluate the resulting p-value produced from our models. The p-value tells us the probability of observing something more extreme than our model's results if the null hypothesis is true. A small p-value suggests that our results are likely not due to random chance and provides enough evidence to reject the null hypothesis in favor of the alternative. Conversely, a large p-value indicates that our results could have occurred by random chance, and we therefore do not have enough evidence to reject the null hypothesis.
+
+### Core Model {#sec-core-model}
+
+We initially fit a multiple regression model using basic predictors to test our hypothesis. The model follows the form:
+
+$$ 
+\mathbf{Y} = \mathbf{X}\boldsymbol{\beta}+\boldsymbol{\varepsilon}
+$$
+
+$\mathbf{Y}$ represents the 221 x 1 response variable vector, where each row is the team standings points at the end of the regular season for a given season.
+
+$\mathbf{X}$ represents the 221 x 10 predictor variable matrix where each column is a predictor and each row is the observed values of that predictor for each team-season combination.
+
+We define $X_1$ as the defense scoring percentage, $X_2$ as the unblocked shot attempts % (USAT %), $X_3$ as the save percentage, and $X_4$ - $X_9$ as the season IDs as factors. The season 2018-2019 is considered our reference level and thus a separate predictor column is not necessary for that factor level. In our discussion of the $\beta$ values below, "reference year" refers to the 2018-2019 season.
+
+$\boldsymbol{\beta}$ is the 10 x 1 vector of coefficients for each predictor. $\beta_0$ represents the estimated team standings points when all predictors equal 0. $\beta_1$ represents the expected change in team standings points when defense scoring percentage increases by one unit for the reference year, holding all other predictors constant. $\beta_2$ represents the expected change in team standings points when unblocked shot attempts % increases by one unit for the reference year, holding all other predictors constant. $\beta_3$ represents the expected change in team standings points when save percentage increases by one unit for the reference year, holding all other predictors constant. $\beta_4$ represents the expected change in team standings points when the season is 2019-2020, holding all other predictors constant. Similarly, for $\beta_5$ through $\beta_9$, each represents the expected change in the team standings points when the season changes, holding all other predictors constant.
+
+$\boldsymbol{\varepsilon}$ is the vector of errors.
+
+### Polynomial Model {#sec-poly-model}
+
+After fitting the initial core model, partial residual graphs were utilized to examine each predictor for non-linearity. We used the `crPlots` function from the `car` package [@car] to plot the relationship between each predictor variable and the response after adjusting for other predictors. This showed clear curvature for the unblocked shots attempted %, USAT %.
+
+To account for this, we iterated upon the core model by fitting the USAT % predictor as a polynomial term with degree two. Adding a polynomial term changes the interpretation of the USAT % coefficient, but as we will not be performing a hypothesis test on the USAT % predictor, we don't worry too much about the interpretation of this term. Generally speaking, the USAT % variable is now comprised of two terms: a linear component and a quadratic curvature component. Fitting the polynomial term reduces multicollinearity and stabilizes the model estimation, but the raw values of the coefficients are no longer meaningful.
+
+### Core Plus Model {#sec-core-plus-model}
+
+The final model we fit iterates upon the polynomial model by adding two more predictor variables: Power Play percentage, PP%, and Penalty Kill %, PK%. The addition of these predictors aims to control further for the offensive, defensive, and goaltending talent. The general model formula remains $\mathbf{Y} = \mathbf{X}\boldsymbol{\beta}+\boldsymbol{\varepsilon}$, but the individual vectors for $\mathbf{X}$ and $\boldsymbol{\beta}$ now each have additional columns and rows, respectively, for the added predictors.
+
+Each of the models utilizes the built in `lm()` functions in the R software [@R_language] to construct multiple regression models.
+
+### Linear Regression Assumptions
+
+For inference from our models to be reliable, we must meet certain linear regression assumptions. For our paper specifically, we are interested in valid p-values, hypothesis test, standard errors, and confidence intervals.
+
+1.  The variables chosen for our model meaningfully capture the relevant measures of the concept being studied. The model should also include all key factors that affect the outcome and its design should be suitable for the research question.
+
+2.  The sample data should be representative of the population in question.
+
+3.  The mean function should be correct, such that the relationship between each predictor and response must be linear in the parameters.
+
+4.  The model errors should be independent. The observations in our sample data should be statistically independent of the others.
+
+5.  The variance of model errors should be equal.
+
+6.  The model errors should be normally distributed.
+
+As our hypothesis test is intended to cover NHL teams only, our choice of data is an appropriate match. We have also chosen essential team-strength controls relevant to the outcome variable, team standings points.
+
+After including a polynomial term for USAT %, our polynomial and core plus models reasonably meet the assumption of linearity. Examination of diagnostic plots indicate that our models display constant variance of errors and meet normality of errors well.
+
+A mild weakness concerns the independence of observations. The same teams appear across multiple seasons, meaning that the observations are not perfectly independent. Independence is mostly reasonable and we proceed with caution.
+
+These will be discussed in further detail with diagnostic plots in @sec-results.
+
+### Confidence Intervals {#sec-confit}
+
+In addition to observing the coefficients, standard errors, and p-values from each model, we also build confidence intervals for the $\beta_1$ coefficient using each model. We utilize a 95% confidence interval and use the base R's `confint()` function to calculate the confidence interval. Calculating the confidence interval for our data requires estimating the standard error of $b_1$, since the true population standard error is unknown and thus, we utilize the t-distribution as it is more conservative. The confidence intervals capture the range of plausible coefficients for our $\beta_1$ term, which provides a more comprehensive picture of the predictor's uncertainty. It helps us determine whether or not the true effect of the defense scoring percentage could zero.
+
+### Model Selection
+
+As we are testing a hypothesis, we make use of the two models that meet the assumptions of linear regression: the polynomial and core plus models.
+
+### Analysis Limitations
+
+As the models are built upon a limited number of years' data, this inherently presents a constraint to the analysis. Additionally, our data is aggregated at the team level, which does not allow for player-level effects, injuries, coaching styles, game-specific nuances that can also influence a team's performance. There are likely other predictor variables that should be included as controls that I am not aware of due to my limited knowledge of ice hockey.
+
+### Software
+
+In addition to aforementioned software, we also utilize an R package that scrapes NHL data via the NHL and ESPN APIs. [@nhlscrapper]
+
+## Results {#sec-results}
+
+```{r model}
+#| echo: FALSE
+#| output: FALSE
+# ---- core model ----
+coreFitUsat <- lm(points ~ pct_points_def + 
+                 usat_pct + 
+                 save_pct +
+                 factor(season_id),
+               data = full_df)
+
+summary(coreFitUsat)
+# residual vs fitted plot
+plot(coreFitUsat, which = 1, main = "Core Model: Fitted Values vs Residuals")
+resCoreFitUsat <- summary(coreFitUsat)$coefficients[2,]
+
+# ---- polynomial model ----
+coreFitUsatPoly <- lm(points ~ 
+                        pct_points_def + 
+                        poly(usat_pct,2) +
+                        save_pct +
+                        factor(season_id),
+                      data = full_df)
+summary(coreFitUsatPoly)
+resCoreFitUsatPoly <- summary(coreFitUsatPoly)$coefficients[2,]
+
+# ---- core plus model ----
+corePlusUsatPoly <- lm(points ~ 
+                  pct_points_def +
+                  poly(usat_pct, 2) +
+                  save_pct +
+                  power_play_pct +
+                  penalty_kill_pct +
+                  factor(season_id), 
+                data = full_df)
+
+summary(corePlusUsatPoly)
+resCorePlusUsatPoly <- summary(corePlusUsatPoly)$coefficients[2,]
+```
+
+```{r fig-resid}
+#|fig-width: 12
+#|fig-height: 8
+par(mfrow = c(2,2),
+    mar = c(4, 4, 4, 2))
+plot(coreFitUsatPoly, which = 1, main = "Polynomial Model")
+plot(corePlusUsatPoly, which = 1, main = "Core Plus Model")
+
+
+plot(coreFitUsatPoly, which = 2, main = "Polynomial Model")
+plot(corePlusUsatPoly, which = 2, main = "Core Plus Model")
+
+```
+
+The polynomial and core plus models both met the assumptions of linear regression. As shown in @fig-resid, the residual vs. fitted value plots for both models show a fairly random scattering of points, with no clear curvature, suggesting that the model is reasonably specified. The Q-Q plots for both the polynomial and core plus models show that the model residuals track fairly closely to a theoretical normal distribution. These diagnostics in addition to those discussed in the @sec-methods section support reliable usage of p-values and confidence intervals for the coefficient estimates.
+
+The table below shows the estimated coefficients, standard errors, and hypothesis test results for the defense scoring percentage in each model. In the polynomial model, the estimated coefficient is `r round(resCoreFitUsatPoly[1],3)`, which produces a p-value of `r round(resCoreFitUsatPoly[4],3)`. This result is technically at the 5% significance level, allowing us to reject the null hypothesis that defense scoring percentage has no effect on team standings points. However, this finding should be interpreted with caution. Once additional control variables are added via the core plus model, the coefficient shrinks to `r round(resCorePlusUsatPoly[1],3)` and produces a much larger p-value at  `r round(resCorePlusUsatPoly[4],3)`, which indicates no statistical significance. The change in the coefficient reflects how PP% and PK% absorb variance previously attributed to defense scoring percentage. The addition of these variables redistributes shared variance among the predictors and leaves little independent explanatory power to defense scoring percentage.
+
+
+| Model | Coefficient Estimate | Standard Error | t-value | p-value |
+|---------------|---------------|---------------|---------------|---------------|
+| Polynomial | `r round(resCoreFitUsatPoly[1],3)` | `r round(resCoreFitUsatPoly[2],3)` | `r round(resCoreFitUsatPoly[3],3)` | `r round(resCoreFitUsatPoly[4],3)` |
+| Core Plus | `r round(resCorePlusUsatPoly[1],3)` | `r round(resCorePlusUsatPoly[2],3)` | `r round(resCorePlusUsatPoly[3],3)` | `r round(resCorePlusUsatPoly[4],3)` |
+
+: Multiple Regression Model Results
+
+A look at the confidence intervals in the table below highlight this contrast. For the polynomial model, a 95% confidence interval for the defense scoring percentage ranges from `r round(confint(coreFitUsatPoly, "pct_points_def")[1],2)` to `r round(confint(coreFitUsatPoly, "pct_points_def")[2],2)`. The range excludes zero and suggests that there is a statistically significant negative association. The core plus model's confidence interval ranges from `r round(confint(corePlusUsatPoly, "pct_points_def")[1],2)` to `r round(confint(corePlusUsatPoly, "pct_points_def")[2],2)`, which contains zero and indicates that after adding adjusting for additional control variables, there is no evidence that teams whose defensemen contribute a higher portion of scoring tend to earn more or less standings points. 
+
+
+| Model | 2.5% | 97.5% |
+|------------------------|------------------------|------------------------|
+| Polynomial | `r round(confint(coreFitUsatPoly, "pct_points_def")[1],2)` | `r round(confint(coreFitUsatPoly, "pct_points_def")[2],2)` |
+| Core Plus | `r round(confint(corePlusUsatPoly, "pct_points_def")[1],2)` | `r round(confint(corePlusUsatPoly, "pct_points_def")[2],2)` |
+
+: Confidence Intervals for Defense Scoring Percentage Coefficient
+
+Overall, the combined hypothesis test results for the polynomial and core plus models show that defense scoring percentage is not a stable predictor of team standings points. At best, there is a weak negative association between the two. The apparent significance observed in the simpler, polynomial model is removed once additional control variables are added, suggesting that the earlier significant p-value was likely due to omitted variables causing the relationship between defense scoring percentage and team standings points to appear stronger than it truly is.
+
+## Discussion {#sec-discussion}
+
+This paper aims to understand whether the percentage of a team's total skater points earned by their defensemen has a meaningful impact on the team standings points across the span of seven NHL regular seasons. We fit a sequence of multiple regression models, starting with a core model, adding a polynomial term for the USAT % term, and finally a more comprehensive core plus model. Upon examination, we did not find consistent evidence that defense scoring percentage had a statistically significant impact on the team's standing points at the end of a regular season. The polynomial model suggested a mild negative association, but the effect disappeared when additional control variables were included. 
+
+These findings suggest that, at a team level, once measures of team-strength, such as save percentage and puck possession, are incorporated, the offensive contribution of defensemen does not independently drive regular season team performance. Defense scoring percentage seems to be a downstream consequence of a team's foundational talent and strategy. This finding aligns with existing hockey analysis which emphasizes that possession and goaltending efficacy are the main drivers of team outcomes, and individual scoring distributions are a secondary role.
+
+As noted earlier, there are several limitations to this study. We have limited our data to only seven seasons, of which two seasons were significantly impacted by the COVID-19 pandemic, which reduces the comparability power of our data. The data is also aggregated at a team-level which reduces the power of the dataset. The same teams are observed across seasons which introduces some dependence between seasons that are not fully addressed via the model used in this paper. 
+
+Future extensions to this analysis could include incorporating additional years of NHL data and using detailed by-game data, rather than aggregating it at a team level for the season. The addition of more historical data can also extend the analysis to look whether the relationship between defense scoring percentage and team success has noticeably shifted over time, especially given recent league-wide shifts towards more active defensemen. 
+
+## References
