@@ -31,8 +31,6 @@ library(gt)
 library(broom)
 library(patchwork)
 full_df <- readr::read_csv("NHL_18to25_stats.csv")
-full_df_scaled <- readr::read_csv("NHL_18to25_stats_scaled.csv")
-
 ```
 
 ## Introduction {#sec-intro}
