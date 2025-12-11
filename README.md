@@ -39,4 +39,4 @@
 
 ------------------------------------------------------------------------
 
--   The data used for this paper is publicly available NHL statistics accessed via [NHL.com](https://www.nhl.com/stats/){.uri}. The data is used under fair academic usage per the NHL Terms of Service; the NHL retains all rights to the original game data.
+-   The data used for this paper is publicly available NHL statistics accessed via [NHL.com](https://www.nhl.com/stats/). The data is used under fair academic usage per the NHL Terms of Service; the NHL retains all rights to the original game data.
